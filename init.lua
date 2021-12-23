@@ -9,127 +9,217 @@ hs.loadSpoon("Zoom")
 hs.loadSpoon("CitrixViewer")
 
 local inZoomMeeting = false
-local isMuted = true -- zoom starts on Mute ...
-local isVideoOn = false -- ... with video off
-local debug = false
+local isMuted = false
+local isVideoOn = false
+local debug = true
 local isScreenLocked = false
 local isCitrixRunning = false
 local pollingInterval = 2 -- seconds
+local ledMode = "off"
+local hyperPixelSocket = nil
+local hyperPixelControlWindow = nil
+local hyperPixelDesiredState = false
+
+function _debug(message, ...)
+  if debug then
+    hs.printf(message, ...)
+  end
+end
+
+function isWeekend()
+  today = os.date("%A")
+  if today == "Saturday" or today == "Sunday" then
+    _debug("Weekend, keeping LED off")
+    return true
+  else
+    return false
+  end
+end
 
 function updateLightStatus()
-  if isScreenLocked or not isCitrixRunning then
+  if isScreenLocked or not isCitrixRunning or isWeekend() then
     -- screen is locked, turn off warning LED
-    if debug then
-      hs.printf("LED OFF")
+    _debug("LED %s => off", ledMode)
+    if ledMode ~= "off" then
+      hs.execute([["/usr/bin/python3" "/Users/brunonavert/.hammerspoon/yeelight-office.py" "--mode" "off"]])
+      ledMode = "off"
     end
-    hs.execute([["/usr/bin/python3" "/Users/brunonavert/.hammerspoon/yeelight-office.py" "--mode" "off"]])
   elseif inZoomMeeting then
-    if isVideoOn or not isMuted then
-      if debug then
-        hs.printf("LED RED")
-      end
+    _debug("LED %s => dnd", ledMode)
+    if ledMode ~= "dnd" then
       hs.execute([["/usr/bin/python3" "/Users/brunonavert/.hammerspoon/yeelight-office.py" "--mode" "dnd"]])
-    else
-      if debug then
-        hs.printf("LED AMBER")
-      end
-      hs.execute([["/usr/bin/python3" "/Users/brunonavert/.hammerspoon/yeelight-office.py" "--mode" "warning"]])
+      ledMode = "dnd"
     end
   else
-    if debug then
-      hs.printf("LED GREEN")
+    _debug("LED %s => work", ledMode)
+    if ledMode ~= "work" then
+      hs.execute([["/usr/bin/python3" "/Users/brunonavert/.hammerspoon/yeelight-office.py" "--mode" "work"]])
+      ledMode = "work"
     end
-    hs.execute([["/usr/bin/python3" "/Users/brunonavert/.hammerspoon/yeelight-office.py" "--mode" "work"]])
   end
 end
 
 function micMuted()
-  if debug then
-    hs.printf("Mute ON")
-  end
+  _debug("Mute ON")
   isMuted = true
   updateLightStatus()
 end
 
 function micUnmuted()
-  if debug then
-    hs.printf("Mute OFF")
-  end
+  _debug("Mute OFF")
   isMuted = false
   updateLightStatus()
 end
 
 function meetingOff()
-  if debug then
-    hs.printf("Meeting closed")
-  end
+  _debug("Meeting closed")
   inZoomMeeting = false
-  isMuted = true
-  isVideoOn = false
   updateLightStatus()
 end
 
 function meetingStart()
-  if debug then
-    hs.printf("Meeting start")
-  end
+  _debug("Meeting start")
   inZoomMeeting = true
   updateLightStatus()
 end
 
 function videoOn()
-  if debug then
-    hs.printf("Video turned ON")
-  end
+  _debug("Video turned ON")
   isVideoOn = true
   updateLightStatus()
 end
 
 function videoOff()
-  if debug then
-    hs.printf("Video turned OFF")
-  end
+  _debug("Video turned OFF")
   isVideoOn = false
   updateLightStatus()
 end
 
-function screenLocked()
-  if debug then
-    hs.printf("Screen locked")
+function hyperPixelSocketCallback(data, tag)
+  _debug("Got data from socket: " .. data)
+end
+
+
+function sendToHyperPixel(command, ...)
+  if hyperPixelSocket ~= nil and hyperPixelSocket.connected then
+    if hyperPixelSocket.connected then
+      message = string.format(command, ...)
+      hyperPixelSocket:send(message)
+      _debug("Sending to HyperPixel: %s", message)
+    else
+      _debug("HyperPixel Connection Lost!")
+      disconnectFromHyperPixel()
+    end
   end
+end
+
+function turnOnHyperPixel()
+  sendToHyperPixel("on")
+end
+
+function turnOffHyperPixel()
+  sendToHyperPixel("off")
+end
+
+function showHyperPixelControlWindow()
+  cw = hs.webview.newBrowser(hs.geometry.rect(960, 1150, 450, 250))
+  cw:windowStyle({"titled", "nonactivating"}):windowTitle("HyperPixel Controls"):url("http://hyperpixel.local/")
+
+  t = require("hs.webview.toolbar")
+  a = t.new("HyperPixel Controls", {
+          { id = "ON", selectable = true, image = hs.image.imageFromName("NSStatusAvailable") },
+          { id = "OFF", selectable = true, image = hs.image.imageFromName("NSStatusUnavailable") },
+          { id = "navGroup", label = "Navigation", groupMembers = { "navLeft", "navRight" }},
+          { id = "navLeft", image = hs.image.imageFromName("NSGoLeftTemplate"), allowedAlone = false },
+          { id = "navRight", image = hs.image.imageFromName("NSGoRightTemplate"), allowedAlone = false },
+          { id = "Close", selectable = true, image = hs.image.imageFromName("NSNavEjectButton.normal") },
+      }):canCustomize(false)
+        :autosaves(true)
+        :selectedItem("OFF")
+        :setCallback(function(tb, wv, button)
+          if button == "ON" then
+            _debug("ON pressed")
+            hyperPixelDesiredState = true
+            turnOnHyperPixel()
+          elseif button == "OFF" then
+            _debug("OFF pressed")
+            hyperPixelDesiredState = false
+            turnOffHyperPixel()
+          elseif button == "Close" then
+            disconnectFromHyperPixel()
+          elseif button == "navLeft" then
+            sendToHyperPixel("previous")
+          elseif button == "navRight" then
+            sendToHyperPixel("next")
+          else
+            _debug('WTF? ' .. button)
+          end
+        end)
+
+  t.attachToolbar(cw, a)
+  cw:show()
+  hyperPixelControlWindow = cw
+end
+
+function connectToHyperPixel()
+  if hyperPixelSocket == nil then
+    _debug("Connecting to HyperPixel Pi...")
+    hyperPixelSocket = hs.socket.new():connect('hyperpixel.local', 4242)
+    if hyperPixelSocket == nil then
+      _debug("Error connecting to HyperPixel Pi!")
+    elseif hyperPixelControlWindow ~= nil then
+      hyperPixelControlWindow:show()
+    else
+      showHyperPixelControlWindow()
+    end
+  end
+end
+
+function disconnectFromHyperPixel()
+  if hyperPixelSocket ~= nil then
+    turnOffHyperPixel()
+    _debug("Disconnecting from HyperPixel Pi...")
+    hyperPixelSocket:disconnect()
+    hyperPixelSocket:setCallback(nil)
+    hyperPixelSocket = nil
+  end
+  if hyperPixelControlWindow ~= nil then
+    hyperPixelControlWindow:hide()
+  end
+end
+
+function screenLocked()
+  _debug("Screen locked")
   isScreenLocked = true
   updateLightStatus()
+  disconnectFromHyperPixel()
 end
 
 function screenUnlocked()
-  if debug then
-    hs.printf("Screen unlocked")
-  end
+  _debug("Screen unlocked")
   isScreenLocked = false
   updateLightStatus()
+  connectToHyperPixel()
+  if hyperPixelDesiredState == true then
+    turnOnHyperPixel()
+  end
 end
 
 function citrixStarted()
-  if debug then
-    hs.printf("Citrix started")
-  end
+  _debug("Citrix started")
   isCitrixRunning = true
   updateLightStatus()
 end
 
 function citrixStopped()
-  if debug then
-    hs.printf("Citrix stopped")
-  end
+  _debug("Citrix stopped")
   isCitrixRunning = false
   updateLightStatus()
 end
 
 -- Listen to Citrix events
 updateCitrixStatus = function(event)
-  if debug then
-    hs.printf("citrixStatus(%s)", event)
-  end
+  _debug("citrixStatus(%s)", event)
   if event == "citrixStarted" then
     citrixStarted()
   elseif event == "citrixStopped" then
@@ -141,9 +231,7 @@ spoon.CitrixViewer:start()
 
 -- Listen to Zoom events
 updateZoomStatus = function(event)
-  if debug then
-    hs.printf("updateZoomStatus(%s)", event)
-  end
+  _debug("updateZoomStatus(%s)", event)
   if event == "from-running-to-meeting" then
     meetingStart()
   elseif event == "muted" then
@@ -161,6 +249,7 @@ end
 spoon.Zoom:setStatusCallback(updateZoomStatus)
 spoon.Zoom:pollStatus(pollingInterval)
 spoon.Zoom:start()
+inZoomMeeting = spoon.Zoom:inMeeting()
 
 -- check for screen lock/unlock events
 local function on_caffeine_event(event)
@@ -168,9 +257,7 @@ local function on_caffeine_event(event)
   for key,val in pairs(hs.caffeinate.watcher) do
     if event == val then name = key end
   end
-  if debug then
-    hs.printf("caffeinate event %d => %s", event, name)
-  end
+  _debug("caffeinate event %d => %s", event, name)
   if event == hs.caffeinate.watcher.screensDidUnlock
   then
     screenUnlocked()
@@ -184,3 +271,6 @@ lock_watcher:start()
 
 -- set initial LED status
 updateLightStatus()
+
+-- Connect to HyperPixel Pi (if running)
+connectToHyperPixel()
