@@ -45,10 +45,18 @@ function updateLightStatus()
       ledMode = "off"
     end
   elseif inZoomMeeting then
-    _debug("LED %s => dnd", ledMode)
-    if ledMode ~= "dnd" then
-      hs.execute([["/usr/bin/python3" "/Users/brunonavert/.hammerspoon/yeelight-office.py" "--mode" "dnd"]])
-      ledMode = "dnd"
+    if isVideoOn then
+      _debug("LED %s => dnd", ledMode)
+      if ledMode ~= "dnd" then
+        hs.execute([["/usr/bin/python3" "/Users/brunonavert/.hammerspoon/yeelight-office.py" "--mode" "dnd"]])
+        ledMode = "dnd"
+      end
+    else
+      _debug("LED %s => warning", ledMode)
+      if ledMode ~= "warning" then
+        hs.execute([["/usr/bin/python3" "/Users/brunonavert/.hammerspoon/yeelight-office.py" "--mode" "warning"]])
+        ledMode = "warning"
+      end
     end
   else
     _debug("LED %s => work", ledMode)

@@ -82,6 +82,6 @@ elif args.mode == 'work':
 
 elif args.mode == 'warning':
   set_power('on', 'smooth', 5)
-  set_bright(50)
-  set_color(255, 255, 0)
+  set_bright(75)
+  set_color(255, 102, 0)
   
