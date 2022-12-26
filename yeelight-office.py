@@ -77,7 +77,7 @@ elif args.mode == 'dnd':
 
 elif args.mode == 'work':
   set_power('on', 'smooth', 5)
-  set_bright(20)
+  set_bright(50)
   set_color(0, 255, 0)
 
 elif args.mode == 'warning':
