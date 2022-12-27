@@ -1,5 +1,5 @@
 -- This script will control a warning LED to let family members know
--- to now come in during a Zoom meeting
+-- to not come in during a Zoom meeting
 
 -- Using Zoom spoon from: https://github.com/brunon/Zoom.spoon
 -- Forked from: https://github.com/jpf/Zoom.spoon
@@ -7,6 +7,9 @@ hs.loadSpoon("Zoom")
 
 -- CitrixViewer spoon from: https://github.com/brunon/CitrixViewer.spoon
 hs.loadSpoon("CitrixViewer")
+
+-- Yeelight spoon from: https://github.com/brunon/Yeelight.spoon
+hs.loadSpoon("Yeelight")
 
 local inZoomMeeting = false
 local isMuted = false
@@ -41,27 +44,27 @@ function updateLightStatus()
     -- screen is locked, turn off warning LED
     _debug("LED %s => off", ledMode)
     if ledMode ~= "off" then
-      hs.execute([["/usr/bin/python3" "/Users/brunonavert/.hammerspoon/yeelight-office.py" "--mode" "off"]])
+      spoon.Yeelight:turn_off()
       ledMode = "off"
     end
   elseif inZoomMeeting then
     if isVideoOn then
       _debug("LED %s => dnd", ledMode)
       if ledMode ~= "dnd" then
-        hs.execute([["/usr/bin/python3" "/Users/brunonavert/.hammerspoon/yeelight-office.py" "--mode" "dnd"]])
+        spoon.Yeelight:turn_on('FF0000', 75, 'smooth', 5) -- red
         ledMode = "dnd"
       end
     else
       _debug("LED %s => warning", ledMode)
       if ledMode ~= "warning" then
-        hs.execute([["/usr/bin/python3" "/Users/brunonavert/.hammerspoon/yeelight-office.py" "--mode" "warning"]])
+        spoon.Yeelight:turn_on('FFA500', 75, 'smooth', 5) -- amber
         ledMode = "warning"
       end
     end
   else
     _debug("LED %s => work", ledMode)
     if ledMode ~= "work" then
-      hs.execute([["/usr/bin/python3" "/Users/brunonavert/.hammerspoon/yeelight-office.py" "--mode" "work"]])
+      spoon.Yeelight:turn_on('008000', 50, 'smooth', 5) -- green
       ledMode = "work"
     end
   end
@@ -87,8 +90,10 @@ end
 
 function meetingStart()
   _debug("Meeting start")
-  inZoomMeeting = true
-  updateLightStatus()
+  if not inZoomMeeting then
+    inZoomMeeting = true
+    updateLightStatus()
+  end
 end
 
 function videoOn()
@@ -201,6 +206,7 @@ function screenLocked()
   isScreenLocked = true
   updateLightStatus()
   disconnectFromHyperPixel()
+  spoon.Yeelight:stop()
 end
 
 function screenUnlocked()
@@ -211,6 +217,7 @@ function screenUnlocked()
   if hyperPixelDesiredState == true then
     turnOnHyperPixel()
   end
+  spoon.Yeelight:start()
 end
 
 function citrixStarted()
@@ -224,6 +231,9 @@ function citrixStopped()
   isCitrixRunning = false
   updateLightStatus()
 end
+
+-- Connect to Yeelight bulb
+spoon.Yeelight:start('10.0.0.93', 55443)
 
 -- Listen to Citrix events
 updateCitrixStatus = function(event)
@@ -250,8 +260,10 @@ updateZoomStatus = function(event)
     videoOn()
   elseif event == "videoStopped" then
     videoOff()
-  elseif event == "from-meeting-to-running" then
+  elseif (event == "from-running-to-closed") or (event == 'from-meeting-to-running') then
     meetingOff()
+  else
+    _debug("unhandled event: %s", event)
   end
 end
 spoon.Zoom:setStatusCallback(updateZoomStatus)
