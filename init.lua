@@ -22,6 +22,8 @@ local ledMode = "off"
 local hyperPixelSocket = nil
 local hyperPixelControlWindow = nil
 local hyperPixelDesiredState = false
+local hyperPixelConnectTimer = null
+local hyperPixelPingTimer = null
 
 function _debug(message, ...)
   if debug then
@@ -114,14 +116,11 @@ end
 
 
 function sendToHyperPixel(command, ...)
-  if hyperPixelSocket ~= nil and hyperPixelSocket.connected then
-    if hyperPixelSocket.connected then
-      message = string.format(command, ...)
-      hyperPixelSocket:send(message)
-      _debug("Sending to HyperPixel: %s", message)
-    else
-      _debug("HyperPixel Connection Lost!")
-      disconnectFromHyperPixel()
+  if hyperPixelSocket ~= nil and hyperPixelSocket:connected() then
+    message = string.format(command, ...)
+    hyperPixelSocket:send(message)
+    if message ~= "ping" then
+        _debug("Sending to HyperPixel: %s", message)
     end
   end
 end
@@ -136,10 +135,10 @@ end
 
 function showHyperPixelControlWindow()
   cw = hs.webview.newBrowser(hs.geometry.rect(960, 1150, 450, 250))
-  cw:windowStyle({"titled", "nonactivating"}):windowTitle("HyperPixel Controls"):url("http://hyperpixel.local/")
+  cw:windowStyle({"titled", "nonactivating"}):windowTitle("HyperPixel"):url("http://hyperpixel.local/")
 
   t = require("hs.webview.toolbar")
-  a = t.new("HyperPixel Controls", {
+  a = t.new("HyperPixel", {
           { id = "ON", selectable = true, image = hs.image.imageFromName("NSStatusAvailable") },
           { id = "OFF", selectable = true, image = hs.image.imageFromName("NSStatusUnavailable") },
           { id = "navGroup", label = "Navigation", groupMembers = { "navLeft", "navRight" }},
@@ -174,24 +173,43 @@ function showHyperPixelControlWindow()
   hyperPixelControlWindow = cw
 end
 
+function sendPingToHyperPixel()
+  if hyperPixelSocket ~= nil and hyperPixelSocket:connected() then
+    sendToHyperPixel("ping")
+  end
+end
+
+function hyperPixelConnected()
+  _debug("HyperPixel connected successfully!")
+  hyperPixelConnectTimer:stop()
+  if hyperPixelControlWindow ~= nil then
+    hyperPixelControlWindow:show()
+  else
+    showHyperPixelControlWindow()
+  end
+  if hyperPixelPingTimer ~= nil then
+    hyperPixelPingTimer:stop()
+  end
+  hyperPixelPingTimer = hs.timer.doEvery(30, sendPingToHyperPixel)
+  hyperPixelPingTimer:start()
+end
+
 function connectToHyperPixel()
-  if hyperPixelSocket == nil then
+  if hyperPixelSocket == nil or not hyperPixelSocket:connected() then
     _debug("Connecting to HyperPixel Pi...")
-    hyperPixelSocket = hs.socket.new():connect('hyperpixel.local', 4242)
-    if hyperPixelSocket == nil then
-      _debug("Error connecting to HyperPixel Pi!")
-    elseif hyperPixelControlWindow ~= nil then
-      hyperPixelControlWindow:show()
-    else
-      showHyperPixelControlWindow()
-    end
+    hyperPixelConnectTimer:start()
+    hyperPixelSocket = hs.socket.new(hyperPixelSocketCallback):connect('hyperpixel.local', 4242, hyperPixelConnected)
+    hyperPixelSocket:setTimeout(30)
   end
 end
 
 function disconnectFromHyperPixel()
   if hyperPixelSocket ~= nil then
-    turnOffHyperPixel()
     _debug("Disconnecting from HyperPixel Pi...")
+    if hyperPixelPingTimer ~= nil then
+      hyperPixelPingTimer:stop()
+      hyperPixelPingTimer = nil
+    end
     hyperPixelSocket:disconnect()
     hyperPixelSocket:setCallback(nil)
     hyperPixelSocket = nil
@@ -205,19 +223,30 @@ function screenLocked()
   _debug("Screen locked")
   isScreenLocked = true
   updateLightStatus()
-  disconnectFromHyperPixel()
-  spoon.Yeelight:stop()
+  turnOffHyperPixel()
 end
 
 function screenUnlocked()
   _debug("Screen unlocked")
   isScreenLocked = false
   updateLightStatus()
-  connectToHyperPixel()
+  if hyperPixelSocket == nil or not hyperPixelSocket:connected() then
+    connectToHyperPixel()
+  else
+    turnOnHyperPixel()
+  end
   if hyperPixelDesiredState == true then
     turnOnHyperPixel()
   end
-  spoon.Yeelight:start()
+  if not spoon.Yeelight:connected() then
+    spoon.Yeelight:start()
+  end
+end
+
+function goingToSleep()
+  _debug("Going to sleep, shutting down")
+  disconnectFromHyperPixel()
+  spoon.Yeelight:stop()
 end
 
 function citrixStarted()
@@ -284,6 +313,12 @@ local function on_caffeine_event(event)
   elseif event == hs.caffeinate.watcher.screensDidLock
   then
     screenLocked()
+  elseif event == hs.caffeinate.watcher.systemWillSleep
+  then
+    goingToSleep()
+  elseif event == hs.caffeinate.watcher.systemWillPowerOff
+  then
+    goingToSleep()
   end
 end
 lock_watcher = hs.caffeinate.watcher.new(on_caffeine_event)
@@ -293,4 +328,5 @@ lock_watcher:start()
 updateLightStatus()
 
 -- Connect to HyperPixel Pi (if running)
+hyperPixelConnectTimer = hs.timer.delayed.new(10, connectToHyperPixel)
 connectToHyperPixel()
