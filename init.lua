@@ -283,6 +283,7 @@ function goingToSleep()
   _debug("Going to sleep, shutting down")
   disconnectFromHyperPixel()
   spoon.Yeelight:stop()
+  spoon.Zoom:kill()
 end
 
 function citrixStarted()
