@@ -41,33 +41,49 @@ function isWeekend()
   end
 end
 
+function setLightRed()
+  spoon.Yeelight:turn_on('FF0000', 75, 'smooth', 5) -- red
+  ledMode = "dnd"
+end
+
+function setLightAmber()
+  spoon.Yeelight:turn_on('FFA500', 75, 'smooth', 5) -- amber
+  ledMode = "warning"
+end
+
+function setLightGreen()
+  spoon.Yeelight:turn_on('008000', 50, 'smooth', 5) -- green
+  ledMode = "work"
+end
+
+function setLightOff()
+  spoon.Yeelight:turn_off()
+  ledMode = "off"
+end
+
 function updateLightStatus()
   if isScreenLocked or not isCitrixRunning or isWeekend() then
     -- screen is locked, turn off warning LED
     _debug("LED %s => off", ledMode)
     if ledMode ~= "off" then
-      spoon.Yeelight:turn_off()
-      ledMode = "off"
+      setLightOff()
     end
   elseif inZoomMeeting then
     if isVideoOn then
       _debug("LED %s => dnd", ledMode)
       if ledMode ~= "dnd" then
-        spoon.Yeelight:turn_on('FF0000', 75, 'smooth', 5) -- red
-        ledMode = "dnd"
+        setLightRed()
       end
     else
       _debug("LED %s => warning", ledMode)
       if ledMode ~= "warning" then
-        spoon.Yeelight:turn_on('FFA500', 75, 'smooth', 5) -- amber
-        ledMode = "warning"
+        setLightAmber()
       end
     end
   else
     _debug("LED %s => work", ledMode)
     if ledMode ~= "work" then
-      spoon.Yeelight:turn_on('008000', 50, 'smooth', 5) -- green
-      ledMode = "work"
+      setLightGreen()
     end
   end
 end
@@ -133,36 +149,55 @@ function turnOffHyperPixel()
   sendToHyperPixel("off")
 end
 
+function toggleHyperPixel()
+  if hyperPixelDesiredState == true then
+    hyperPixelDesiredState = false
+    turnOffHyperPixel()
+  else
+    hyperPixelDesiredState = true
+    turnOnHyperPixel()
+  end
+end
+
 function showHyperPixelControlWindow()
   cw = hs.webview.newBrowser(hs.geometry.rect(960, 1150, 450, 250))
-  cw:windowStyle({"titled", "nonactivating"}):windowTitle("HyperPixel"):url("http://hyperpixel.local/")
+  cw:windowStyle({"titled", "nonactivating"}):windowTitle("HyperPixel Controls"):url("http://hyperpixel.local/")
 
   t = require("hs.webview.toolbar")
-  a = t.new("HyperPixel", {
-          { id = "ON", selectable = true, image = hs.image.imageFromName("NSStatusAvailable") },
-          { id = "OFF", selectable = true, image = hs.image.imageFromName("NSStatusUnavailable") },
-          { id = "navGroup", label = "Navigation", groupMembers = { "navLeft", "navRight" }},
+  a = t.new("HyperPixel Controls", {
+          { id = "ON/OFF", image = hs.image.imageFromName("NSWinHighSwitch") },
+          { id = "navGroup", label = "Images", groupMembers = { "navLeft", "navRight" }},
           { id = "navLeft", image = hs.image.imageFromName("NSGoLeftTemplate"), allowedAlone = false },
           { id = "navRight", image = hs.image.imageFromName("NSGoRightTemplate"), allowedAlone = false },
-          { id = "Close", selectable = true, image = hs.image.imageFromName("NSNavEjectButton.normal") },
+          { id = "lightGroup", label = "YeeLight Control", groupMembers = { "lightGreen", "lightAmber", "lightRed", "lightOff" }},
+          { id = "lightGreen", image = hs.image.imageFromName("NSStatusAvailable"), allowedAlone = false },
+          { id = "lightAmber", image = hs.image.imageFromName("NSStatusIdle"), allowedAlone = false },
+          { id = "lightRed", image = hs.image.imageFromName("NSStatusAway"), allowedAlone = false },
+          { id = "lightOff", image = hs.image.imageFromName("NSStatusUnknown"), allowedAlone = false },
       }):canCustomize(false)
-        :autosaves(true)
-        :selectedItem("OFF")
+        :autosaves(false)
+        :toolbarStyle("unifiedCompact")
         :setCallback(function(tb, wv, button)
-          if button == "ON" then
-            _debug("ON pressed")
-            hyperPixelDesiredState = true
-            turnOnHyperPixel()
-          elseif button == "OFF" then
-            _debug("OFF pressed")
-            hyperPixelDesiredState = false
-            turnOffHyperPixel()
-          elseif button == "Close" then
-            disconnectFromHyperPixel()
+          if button == "ON/OFF" then
+            toggleHyperPixel()
+            if hyperPixelDesiredState == true then
+              newImageName = "NSWinHighSwitch"
+            else
+              newImageName = "NSWinSwitch"
+            end
+            cw:attachedToolbar():modifyItem({ id = "ON/OFF", image = hs.image.imageFromName(newImageName) })
           elseif button == "navLeft" then
             sendToHyperPixel("previous")
           elseif button == "navRight" then
             sendToHyperPixel("next")
+          elseif button == "lightGreen" then
+            setLightGreen()
+          elseif button == "lightAmber" then
+            setLightAmber()
+          elseif button == "lightRed" then
+            setLightRed()
+          elseif button == "lightOff" then
+            setLightOff()
           else
             _debug('WTF? ' .. button)
           end
@@ -192,6 +227,7 @@ function hyperPixelConnected()
   end
   hyperPixelPingTimer = hs.timer.doEvery(30, sendPingToHyperPixel)
   hyperPixelPingTimer:start()
+  hyperPixelDesiredState = true
 end
 
 function connectToHyperPixel()
