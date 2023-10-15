@@ -14,6 +14,7 @@ hs.loadSpoon("Yeelight")
 local inZoomMeeting = false
 local isMuted = false
 local isVideoOn = false
+local isCameraInUse = false
 local debug = true
 local isScreenLocked = false
 local isCitrixRunning = false
@@ -68,8 +69,8 @@ function updateLightStatus()
     if ledMode ~= "off" then
       setLightOff()
     end
-  elseif inZoomMeeting then
-    if isVideoOn then
+  elseif inZoomMeeting or isCameraInUse then
+    if isVideoOn or isCameraInUse then
       _debug("LED %s => dnd", ledMode)
       if ledMode ~= "dnd" then
         setLightRed()
@@ -367,3 +368,17 @@ updateLightStatus()
 -- Connect to HyperPixel Pi (if running)
 hyperPixelConnectTimer = hs.timer.delayed.new(10, connectToHyperPixel)
 connectToHyperPixel()
+
+-- Detect camera in-use changes
+cameraCallback = function(camera, propertyChanged)
+  _debug("Camera %s in use? %s", camera:name(), camera:isInUse())
+  isCameraInUse = camera:isInUse()
+  updateLightStatus()
+end
+
+require("hs.camera")
+for _, camera in pairs(hs.camera.allCameras()) do
+  camera:setPropertyWatcherCallback(cameraCallback)
+  camera:startPropertyWatcher()
+end
+
