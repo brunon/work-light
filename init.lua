@@ -23,8 +23,9 @@ local ledMode = "off"
 local hyperPixelSocket = nil
 local hyperPixelControlWindow = nil
 local hyperPixelDesiredState = false
-local hyperPixelConnectTimer = null
-local hyperPixelPingTimer = null
+local hyperPixelConnectTimer = nil
+local hyperPixelPingTimer = nil
+local ceilingLightID = nil
 
 function _debug(message, ...)
   if debug then
@@ -45,6 +46,7 @@ end
 function setLightRed()
   spoon.Yeelight:turn_on('FF0000', 75, 'smooth', 5) -- red
   ledMode = "dnd"
+  spoon.Hue:setLightState(ceilingLightID, "true", 100)
 end
 
 function setLightAmber()
@@ -55,6 +57,7 @@ end
 function setLightGreen()
   spoon.Yeelight:turn_on('008000', 50, 'smooth', 5) -- green
   ledMode = "work"
+  spoon.Hue:setLightState(ceilingLightID, "true", 200)
 end
 
 function setLightOff()
@@ -261,6 +264,7 @@ function screenLocked()
   isScreenLocked = true
   updateLightStatus()
   turnOffHyperPixel()
+  spoon.Hue:setLightState(ceilingLightID, "false", 0)
 end
 
 function screenUnlocked()
@@ -278,6 +282,7 @@ function screenUnlocked()
   if not spoon.Yeelight:connected() then
     spoon.Yeelight:start()
   end
+  spoon.Hue:setLightState(ceilingLightID, "true", 200)
 end
 
 function goingToSleep()
@@ -381,4 +386,14 @@ for _, camera in pairs(hs.camera.allCameras()) do
   camera:setPropertyWatcherCallback(cameraCallback)
   camera:startPropertyWatcher()
 end
+
+hueReady = function()
+  _debug("hue ready")
+  ceilingLightID = spoon.Hue:getBulbs("Ceiling Light")
+end
+hs.loadSpoon("Hue")
+spoon.Hue.ip = "10.0.0.242"
+spoon.Hue:setReadyCallback(hueReady)
+spoon.Hue:updateURLs()
+spoon.Hue:init()
 
