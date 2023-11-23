@@ -176,8 +176,8 @@ function obj:getBulbs(lookupName)
     if code == 200 then
         local rawJSON = hs.json.decode(body)
         for id,data in pairs(rawJSON) do
+          self:debug(string.format("Found light: %d (%s)", id, data["name"]))
           if data["name"] and data["name"] == lookupName then
-            self:debug(string.format("Found light: %d (%s)", id, data["name"]))
             return id
           end
         end
