@@ -26,6 +26,7 @@ local hyperPixelDesiredState = false
 local hyperPixelConnectTimer = nil
 local hyperPixelPingTimer = nil
 local lights = {}
+local ceilingLightID = nil
 
 function _debug(message, ...)
   if debug then
@@ -120,12 +121,14 @@ function videoOn()
   _debug("Video turned ON")
   isVideoOn = true
   updateLightStatus()
+  spoon.Hue:setLightState(ceilingLightID, "true", 50)
 end
 
 function videoOff()
   _debug("Video turned OFF")
   isVideoOn = false
   updateLightStatus()
+  spoon.Hue:setLightState(ceilingLightID, "true", 200)
 end
 
 function hyperPixelSocketCallback(data, tag)
@@ -263,7 +266,7 @@ function screenLocked()
   updateLightStatus()
   turnOffHyperPixel()
   for lightID, brightness in pairs(lights) do
-    spoon.Hue:setLightState(lightID, "false", 0)
+    spoon.Hue:setLightState(lightID, "false", brightness)
   end
 end
 
@@ -393,7 +396,8 @@ local hueSetupDone = false
 hueReady = function()
   if not hueSetupDone then
     _debug("Setting up Hue Lights...")
-    lights[spoon.Hue:getBulbs("Ceiling Light")] = 200
+    ceilingLightID = spoon.Hue:getBulbs("Ceiling Light")
+    lights[ceilingLightID] = 200
     lights[spoon.Hue:getBulbs("Corner light")] = 255
     lights[spoon.Hue:getBulbs("Hue Play Left")] = 255
     lights[spoon.Hue:getBulbs("Hue Play Center")] = 255
