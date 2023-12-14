@@ -384,6 +384,11 @@ cameraCallback = function(camera, propertyChanged)
   _debug("Camera %s in use? %s", camera:name(), camera:isInUse())
   isCameraInUse = camera:isInUse()
   updateLightStatus()
+  if isCameraInUse then
+    spoon.Hue:setLightState(ceilingLightID, "true", 50)
+  else
+    spoon.Hue:setLightState(ceilingLightID, "true", 200)
+  end
 end
 
 require("hs.camera")
