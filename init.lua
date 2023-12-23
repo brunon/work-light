@@ -165,7 +165,7 @@ function toggleHyperPixel()
 end
 
 function showHyperPixelControlWindow()
-  cw = hs.webview.newBrowser(hs.geometry.rect(960, 1150, 450, 250))
+  cw = hs.webview.newBrowser(hs.geometry.rect(1000, 1170, 450, 250))
   cw:windowStyle({"titled", "nonactivating"}):windowTitle("HyperPixel Controls"):url("http://hyperpixel.local/")
 
   t = require("hs.webview.toolbar")
