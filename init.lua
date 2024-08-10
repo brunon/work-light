@@ -20,11 +20,13 @@ local isScreenLocked = false
 local isCitrixRunning = false
 local pollingInterval = 2 -- seconds
 local ledMode = "off"
+local hyperPixelEnabled = true
 local hyperPixelSocket = nil
 local hyperPixelControlWindow = nil
 local hyperPixelDesiredState = false
 local hyperPixelConnectTimer = nil
 local hyperPixelPingTimer = nil
+local chartMonitorSocket = nil
 local lights = {}
 local ceilingLightID = nil
 
@@ -135,6 +137,9 @@ function hyperPixelSocketCallback(data, tag)
   _debug("Got data from socket: " .. data)
 end
 
+function chartMonitorSocketCallback(data, tag)
+  _debug("Got data from socket: " .. data)
+end
 
 function sendToHyperPixel(command, ...)
   if hyperPixelSocket ~= nil and hyperPixelSocket:connected() then
@@ -146,12 +151,22 @@ function sendToHyperPixel(command, ...)
   end
 end
 
+function sendToClusterPiMonitor(command, ...)
+  if chartMonitorSocket ~= nil and chartMonitorSocket:connected() then
+    message = string.format(command, ...)
+    chartMonitorSocket:send(message)
+    _debug("Sending to ClusterPi Monitor: %s", message)
+  end
+end
+
 function turnOnHyperPixel()
   sendToHyperPixel("on")
+  sendToClusterPiMonitor("on")
 end
 
 function turnOffHyperPixel()
   sendToHyperPixel("off")
+  sendToClusterPiMonitor("off")
 end
 
 function toggleHyperPixel()
@@ -235,12 +250,19 @@ function hyperPixelConnected()
   hyperPixelDesiredState = true
 end
 
+function clusterMonitorConnected()
+  _debug("ClusterPi Monitor connected successfully!")
+end
+
 function connectToHyperPixel()
   if hyperPixelSocket == nil or not hyperPixelSocket:connected() then
     _debug("Connecting to HyperPixel Pi...")
     hyperPixelConnectTimer:start()
-    hyperPixelSocket = hs.socket.new(hyperPixelSocketCallback):connect('hyperpixel.local', 4242, hyperPixelConnected)
-    hyperPixelSocket:setTimeout(30)
+    hyperPixelSocket = hs.socket.new(hyperPixelSocketCallback):setTimeout(30):connect('hyperpixel.local', 4242, hyperPixelConnected)
+  end
+  if chartMonitorSocket == nil or not chartMonitorSocket:connected() then
+    _debug("Connecting to ClusterPi Monitor...")
+    chartMonitorSocket = hs.socket.new(chartMonitorSocketCallback):setTimeout(30):connect('clusterpi.local', 4242, clusterMonitorConnected)
   end
 end
 
@@ -254,6 +276,11 @@ function disconnectFromHyperPixel()
     hyperPixelSocket:disconnect()
     hyperPixelSocket:setCallback(nil)
     hyperPixelSocket = nil
+  end
+  if chartMonitorSocket ~= nil then
+    _debug("Disconnecting from ClusterPi Monitor...")
+    chartMonitorSocket:disconnect()
+    chartMonitorSocket = nil
   end
   if hyperPixelControlWindow ~= nil then
     hyperPixelControlWindow:hide()
@@ -274,13 +301,15 @@ function screenUnlocked()
   _debug("Screen unlocked")
   isScreenLocked = false
   updateLightStatus()
-  if hyperPixelSocket == nil or not hyperPixelSocket:connected() then
-    connectToHyperPixel()
-  else
-    turnOnHyperPixel()
-  end
-  if hyperPixelDesiredState == true then
-    turnOnHyperPixel()
+  if hyperPixelEnabled then
+    if hyperPixelSocket == nil or not hyperPixelSocket:connected() then
+      connectToHyperPixel()
+    else
+      turnOnHyperPixel()
+    end
+    if hyperPixelDesiredState == true then
+      turnOnHyperPixel()
+    end
   end
   if not spoon.Yeelight:connected() then
     spoon.Yeelight:start()
@@ -376,8 +405,10 @@ lock_watcher:start()
 updateLightStatus()
 
 -- Connect to HyperPixel Pi (if running)
-hyperPixelConnectTimer = hs.timer.delayed.new(10, connectToHyperPixel)
-connectToHyperPixel()
+if hyperPixelEnabled then
+  hyperPixelConnectTimer = hs.timer.delayed.new(10, connectToHyperPixel)
+  connectToHyperPixel()
+end
 
 -- Detect camera in-use changes
 cameraCallback = function(camera, propertyChanged)
